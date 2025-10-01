@@ -50,3 +50,8 @@ moview/
 
 
 todo.md
+verify-requirements.js
+/test*
+demo-api.js
+.gitignore
+FINAL_STATUS_REPORT.md

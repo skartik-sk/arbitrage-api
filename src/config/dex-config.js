@@ -74,8 +74,12 @@ const validateDexConfig = () => {
   }
 };
 
+// Export SUPPORTED_DEXS as alias for compatibility
+const SUPPORTED_DEXS = DEX_CONFIG;
+
 export {
   DEX_CONFIG,
+  SUPPORTED_DEXS,
   POOL_INIT_CODE_HASHES,
   getDexConfig,
   getDexsForChain,
