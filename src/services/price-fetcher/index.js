@@ -1,0 +1,387 @@
+import { ethers } from 'ethers';
+import poolDiscovery from '../pool-discovery.js';
+import rpcManager from '../rpc-manager.js';
+import { SUPPORTED_TOKENS, TOKEN_PAIRS, ARBITRAGE_CONFIG, FEE_TIERS } from '../../config/constants.js';
+import { logPriceUpdate, logError, logger } from '../../utils/logger.js';
+import HelperUtils from '../../utils/helpers.js';
+
+class PriceFetcher {
+  constructor() {
+    this.prices = new Map();
+    this.priceHistory = new Map();
+    this.isRunning = false;
+    this.updateInterval = null;
+    this.subscribers = new Set();
+    this.lastUpdate = null;
+  }
+
+  // Initialize the price fetcher
+  async initialize() {
+    try {
+      logger.info('Initializing price fetcher...');
+
+      // Wait for pool discovery to be ready
+      let retries = 0;
+      while (!poolDiscovery.isInitialized && retries < 10) {
+        await HelperUtils.sleep(1000);
+        retries++;
+      }
+
+      if (!poolDiscovery.isInitialized) {
+        throw new Error('Pool discovery not initialized');
+      }
+
+      // Fetch initial prices
+      await this.updateAllPrices();
+
+      logger.info(`Price fetcher initialized with ${this.prices.size} price points`);
+    } catch (error) {
+      logError(error, { context: 'PriceFetcher.initialize' });
+      throw error;
+    }
+  }
+
+  // Start continuous price updates
+  start(intervalMs = 5000) {
+    if (this.isRunning) {
+      logger.warn('Price fetcher is already running');
+      return;
+    }
+
+    this.isRunning = true;
+    this.updateInterval = setInterval(async () => {
+      try {
+        await this.updateAllPrices();
+      } catch (error) {
+        logError(error, { context: 'PriceFetcher.updateLoop' });
+      }
+    }, intervalMs);
+
+    logger.info(`Price fetcher started with ${intervalMs}ms interval`);
+  }
+
+  // Stop price updates
+  stop() {
+    if (!this.isRunning) {
+      return;
+    }
+
+    this.isRunning = false;
+    if (this.updateInterval) {
+      clearInterval(this.updateInterval);
+      this.updateInterval = null;
+    }
+
+    logger.info('Price fetcher stopped');
+  }
+
+  // Update all prices for supported token pairs
+  async updateAllPrices() {
+    try {
+      const updatePromises = [];
+
+      // Update prices for all token pairs across all DEXs
+      for (const [tokenA, tokenB] of TOKEN_PAIRS) {
+        for (const dex of ['UNISWAP_V3', 'SUSHISWAP_V3']) {
+          updatePromises.push(
+            this.updatePrice(dex, tokenA, tokenB, FEE_TIERS.MEDIUM)
+          );
+        }
+      }
+
+      const results = await Promise.allSettled(updatePromises);
+
+      let successful = 0;
+      let failed = 0;
+
+      results.forEach(result => {
+        if (result.status === 'fulfilled' && result.value) {
+          successful++;
+        } else {
+          failed++;
+        }
+      });
+
+      this.lastUpdate = Date.now();
+
+      if (failed > 0) {
+        logger.warn(`Price update completed: ${successful} successful, ${failed} failed`);
+      }
+
+    } catch (error) {
+      logError(error, { context: 'PriceFetcher.updateAllPrices' });
+      throw error;
+    }
+  }
+
+  // Update price for a specific token pair on a specific DEX
+  async updatePrice(dexName, tokenA, tokenB, feeTier = 3000) {
+    try {
+      const poolInfo = poolDiscovery.getPool(dexName, tokenA, tokenB, feeTier);
+      if (!poolInfo) {
+        logger.debug(`Pool not found for price update: ${dexName} ${tokenA}/${tokenB}`);
+        return null;
+      }
+
+      // Get current pool state
+      const [slot0, liquidity] = await Promise.all([
+        rpcManager.execute(async (provider) => {
+          return await poolInfo.contract.slot0();
+        }),
+        rpcManager.execute(async (provider) => {
+          return await poolInfo.contract.liquidity();
+        })
+      ]);
+
+      // Calculate price from sqrtPriceX96
+      const price = this.calculatePriceFromSqrt(slot0.sqrtPriceX96, tokenA, tokenB);
+
+      const priceData = {
+        dex: dexName,
+        tokenA,
+        tokenB,
+        price,
+        sqrtPriceX96: slot0.sqrtPriceX96.toString(),
+        tick: slot0.tick,
+        liquidity: liquidity.toString(),
+        blockNumber: await rpcManager.getBlockNumber(),
+        timestamp: Date.now()
+      };
+
+      // Store price
+      const priceKey = this.getPriceKey(dexName, tokenA, tokenB);
+      this.prices.set(priceKey, priceData);
+
+      // Store in history (keep last 100 entries)
+      if (!this.priceHistory.has(priceKey)) {
+        this.priceHistory.set(priceKey, []);
+      }
+      const history = this.priceHistory.get(priceKey);
+      history.push(priceData);
+      if (history.length > 100) {
+        history.shift();
+      }
+
+      logPriceUpdate(dexName, `${tokenA}/${tokenB}`, price);
+
+      // Notify subscribers
+      this.notifySubscribers(priceData);
+
+      return priceData;
+
+    } catch (error) {
+      logError(error, {
+        dex: dexName,
+        tokenA,
+        tokenB,
+        feeTier,
+        context: 'PriceFetcher.updatePrice'
+      });
+      return null;
+    }
+  }
+
+  // Calculate price from sqrtPriceX96
+  calculatePriceFromSqrt(sqrtPriceX96, tokenA, tokenB) {
+    try {
+      const tokenAInfo = SUPPORTED_TOKENS[tokenA];
+      const tokenBInfo = SUPPORTED_TOKENS[tokenB];
+
+      if (!tokenAInfo || !tokenBInfo) {
+        throw new Error('Token info not found');
+      }
+
+      // sqrtPriceX96 = sqrt(price) * 2^96
+      // price = (sqrtPriceX96 / 2^96)^2
+
+      const Q96 = new HelperUtils.BigNumber(2).pow(96);
+      const sqrtPrice = new HelperUtils.BigNumber(sqrtPriceX96.toString()).dividedBy(Q96);
+      const rawPrice = sqrtPrice.multipliedBy(sqrtPrice);
+
+      // Adjust for token decimals
+      const decimalsAdjustment = new HelperUtils.BigNumber(10).pow(
+        tokenBInfo.decimals - tokenAInfo.decimals
+      );
+
+      return rawPrice.multipliedBy(decimalsAdjustment);
+    } catch (error) {
+      logError(error, { context: 'PriceFetcher.calculatePriceFromSqrt' });
+      throw error;
+    }
+  }
+
+  // Get current price
+  getPrice(dexName, tokenA, tokenB) {
+    const priceKey = this.getPriceKey(dexName, tokenA, tokenB);
+    return this.prices.get(priceKey);
+  }
+
+  // Get price from any DEX for token pair
+  getBestPrice(tokenA, tokenB) {
+    let bestPrice = null;
+    let bestDex = null;
+
+    for (const dex of ['UNISWAP_V3', 'SUSHISWAP_V3']) {
+      const price = this.getPrice(dex, tokenA, tokenB);
+      if (price && price.price > 0) {
+        if (!bestPrice || price.price.gt(bestPrice.price)) {
+          bestPrice = price;
+          bestDex = dex;
+        }
+      }
+    }
+
+    return { price: bestPrice, dex: bestDex };
+  }
+
+  // Get all prices for a token pair
+  getAllPrices(tokenA, tokenB) {
+    const prices = {};
+
+    for (const dex of ['UNISWAP_V3', 'SUSHISWAP_V3']) {
+      const price = this.getPrice(dex, tokenA, tokenB);
+      if (price) {
+        prices[dex] = price;
+      }
+    }
+
+    return prices;
+  }
+
+  // Calculate price difference between two DEXs
+  calculatePriceDifference(tokenA, tokenB) {
+    const prices = this.getAllPrices(tokenA, tokenB);
+    const dexs = Object.keys(prices);
+
+    if (dexs.length < 2) {
+      return null;
+    }
+
+    const [dexA, dexB] = dexs;
+    const priceA = prices[dexA].price;
+    const priceB = prices[dexB].price;
+
+    if (priceA.isZero() || priceB.isZero()) {
+      return null;
+    }
+
+    const difference = priceA.minus(priceB);
+    const percentage = difference.dividedBy(priceB).multipliedBy(100);
+
+    return {
+      tokenA,
+      tokenB,
+      dexA,
+      dexB,
+      priceA,
+      priceB,
+      difference,
+      percentage: percentage.abs(),
+      isArbitrage: percentage.abs().gte(0.5) // 0.5% threshold
+    };
+  }
+
+  // Get price history
+  getPriceHistory(dexName, tokenA, tokenB, limit = 50) {
+    const priceKey = this.getPriceKey(dexName, tokenA, tokenB);
+    const history = this.priceHistory.get(priceKey) || [];
+    return history.slice(-limit);
+  }
+
+  // Subscribe to price updates
+  subscribe(callback) {
+    this.subscribers.add(callback);
+    return () => this.subscribers.delete(callback);
+  }
+
+  // Notify subscribers of price updates
+  notifySubscribers(priceData) {
+    for (const callback of this.subscribers) {
+      try {
+        callback(priceData);
+      } catch (error) {
+        logError(error, { context: 'PriceFetcher.notifySubscribers' });
+      }
+    }
+  }
+
+  // Get price statistics
+  getStats() {
+    const stats = {
+      totalPrices: this.prices.size,
+      lastUpdate: this.lastUpdate,
+      isRunning: this.isRunning,
+      pricesByDex: {},
+      pricesByPair: {}
+    };
+
+    for (const priceData of this.prices.values()) {
+      // Count by DEX
+      stats.pricesByDex[priceData.dex] = (stats.pricesByDex[priceData.dex] || 0) + 1;
+
+      // Count by pair
+      const pairKey = `${priceData.tokenA}/${priceData.tokenB}`;
+      stats.pricesByPair[pairKey] = (stats.pricesByPair[pairKey] || 0) + 1;
+    }
+
+    return stats;
+  }
+
+  // Utility methods
+  getPriceKey(dexName, tokenA, tokenB) {
+    return `${dexName}:${tokenA}-${tokenB}`;
+  }
+
+  // Check if price is stale
+  isPriceStale(priceData, maxAgeMs = 30000) {
+    return !priceData || (Date.now() - priceData.timestamp) > maxAgeMs;
+  }
+
+  // Get all arbitrage opportunities
+  getArbitrageOpportunities() {
+    const opportunities = [];
+
+    for (const [tokenA, tokenB] of TOKEN_PAIRS) {
+      const diff = this.calculatePriceDifference(tokenA, tokenB);
+      if (diff && diff.isArbitrage) {
+        opportunities.push(diff);
+      }
+    }
+
+    return opportunities.sort((a, b) => b.percentage.minus(a.percentage));
+  }
+
+  // Cleanup old price data
+  cleanup(maxAgeMinutes = 60) {
+    const now = Date.now();
+    const maxAge = maxAgeMinutes * 60 * 1000;
+
+    let cleaned = 0;
+
+    // Clean current prices
+    for (const [key, priceData] of this.prices) {
+      if (now - priceData.timestamp > maxAge) {
+        this.prices.delete(key);
+        cleaned++;
+      }
+    }
+
+    // Clean price history
+    for (const [key, history] of this.priceHistory) {
+      const filtered = history.filter(item => now - item.timestamp <= maxAge);
+      this.priceHistory.set(key, filtered);
+      cleaned += history.length - filtered.length;
+    }
+
+    if (cleaned > 0) {
+      logger.info(`Cleaned up ${cleaned} stale price entries`);
+    }
+
+    return cleaned;
+  }
+}
+
+// Create singleton instance
+const priceFetcher = new PriceFetcher();
+
+export default priceFetcher;
