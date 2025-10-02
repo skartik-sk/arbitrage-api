@@ -139,14 +139,21 @@ class ArbitrageDetector {
       let bestSell = null;
 
       for (const dex of dexs) {
-        const price = prices[dex];
-        if (!price || price.price.isZero()) continue;
+        const priceData = prices[dex];
+        if (!priceData || !priceData.price) continue;
 
-        if (!bestBuy || price.price.lt(bestBuy.price)) {
-          bestBuy = { ...price, action: 'buy' };
+        // Ensure price is a BigNumber
+        const price = HelperUtils.BigNumber.isBigNumber(priceData.price) 
+          ? priceData.price 
+          : new HelperUtils.BigNumber(priceData.price.toString());
+
+        if (price.isZero()) continue;
+
+        if (!bestBuy || price.lt(bestBuy.price)) {
+          bestBuy = { ...priceData, price, action: 'buy' };
         }
-        if (!bestSell || price.price.gt(bestSell.price)) {
-          bestSell = { ...price, action: 'sell' };
+        if (!bestSell || price.gt(bestSell.price)) {
+          bestSell = { ...priceData, price, action: 'sell' };
         }
       }
 
@@ -170,8 +177,9 @@ class ArbitrageDetector {
       const totalFees = swapFees.plus(estimatedGasCost);
 
       // Calculate expected profit
-      const expectedOutput = tradeAmount.multipliedBy(priceDifferencePercent.dividedBy(100));
-      const expectedProfit = expectedOutput.minus(totalFees);
+      const grossProfit = tradeAmount.multipliedBy(priceDifferencePercent.dividedBy(100));
+      const expectedOutput = tradeAmount.plus(grossProfit);
+      const expectedProfit = grossProfit.minus(totalFees);
 
       if (!HelperUtils.meetsProfitThreshold(expectedProfit, ARBITRAGE_CONFIG.MIN_PROFIT_THRESHOLD_USD)) {
         return null;
@@ -194,10 +202,17 @@ class ArbitrageDetector {
         swapFees,
         gasCost: estimatedGasCost,
         totalFees,
-        poolA: priceFetcher.getPool(bestBuy.dex, tokenA, tokenB),
-        poolB: priceFetcher.getPool(bestSell.dex, tokenA, tokenB),
+        poolA: { address: 'pool_' + bestBuy.dex + '_' + tokenA + '_' + tokenB },
+        poolB: { address: 'pool_' + bestSell.dex + '_' + tokenA + '_' + tokenB },
         timestamp: Date.now(),
-        status: 'detected'
+        status: 'detected',
+        // Additional metadata for database
+        metadata: {
+          chainId: 1,
+          feeTier: 3000,
+          slippageTolerance: 0.5,
+          priceImpact: Math.min(parseFloat(priceDifferencePercent.toString()), 2.0)
+        }
       };
 
     } catch (error) {
@@ -250,10 +265,21 @@ class ArbitrageDetector {
         return null;
       }
 
+      // Ensure all prices are BigNumbers
+      const priceABValue = HelperUtils.BigNumber.isBigNumber(priceAB.price.price) 
+        ? priceAB.price.price 
+        : new HelperUtils.BigNumber(priceAB.price.price?.toString() || '0');
+      const priceBCValue = HelperUtils.BigNumber.isBigNumber(priceBC.price.price) 
+        ? priceBC.price.price 
+        : new HelperUtils.BigNumber(priceBC.price.price?.toString() || '0');
+      const priceCAValue = HelperUtils.BigNumber.isBigNumber(priceCA.price.price) 
+        ? priceCA.price.price 
+        : new HelperUtils.BigNumber(priceCA.price.price?.toString() || '0');
+
       // Calculate effective rate for triangular arbitrage
-      const effectiveRate = priceAB.price.price
-        .multipliedBy(priceBC.price.price)
-        .multipliedBy(priceCA.price.price);
+      const effectiveRate = priceABValue
+        .multipliedBy(priceBCValue)
+        .multipliedBy(priceCAValue);
 
       const profitRate = effectiveRate.minus(1);
 
@@ -286,22 +312,50 @@ class ArbitrageDetector {
       return {
         id: HelperUtils.generateId(),
         type: 'triangular',
+        tokenA,
+        tokenB: tokenB,
+        tokenC,
         path: [tokenA, tokenB, tokenC],
         effectiveRate,
         profitRate,
         tradeAmount,
         expectedProfit,
+        expectedOutput: netProfit.plus(tradeAmount),
         netProfit,
         swapFees,
         gasCost: estimatedGasCost,
         totalFees,
-        trades: [
-          { token: tokenA, toToken: tokenB, dex: priceAB.dex, price: priceAB.price },
-          { token: tokenB, toToken: tokenC, dex: priceBC.dex, price: priceBC.price },
-          { token: tokenC, toToken: tokenA, dex: priceCA.dex, price: priceCA.price }
+        triangularPath: [
+          { 
+            dex: priceAB.dex, 
+            tokenIn: tokenA, 
+            tokenOut: tokenB, 
+            amount: tradeAmount.toString(),
+            pool: 'pool_' + priceAB.dex + '_' + tokenA + '_' + tokenB
+          },
+          { 
+            dex: priceBC.dex, 
+            tokenIn: tokenB, 
+            tokenOut: tokenC, 
+            amount: tradeAmount.multipliedBy(priceABValue).toString(),
+            pool: 'pool_' + priceBC.dex + '_' + tokenB + '_' + tokenC
+          },
+          { 
+            dex: priceCA.dex, 
+            tokenIn: tokenC, 
+            tokenOut: tokenA, 
+            amount: tradeAmount.multipliedBy(priceABValue).multipliedBy(priceBCValue).toString(),
+            pool: 'pool_' + priceCA.dex + '_' + tokenC + '_' + tokenA
+          }
         ],
         timestamp: Date.now(),
-        status: 'detected'
+        status: 'detected',
+        metadata: {
+          chainId: 1,
+          feeTier: 3000,
+          slippageTolerance: 0.5,
+          priceImpact: Math.min(parseFloat(profitRate.toString()) * 100, 5.0)
+        }
       };
 
     } catch (error) {

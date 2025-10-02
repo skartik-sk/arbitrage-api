@@ -82,16 +82,27 @@ class PoolDiscovery {
         throw new Error(`DEX ${dexName} not initialized`);
       }
 
-      const tokenAAddress = SUPPORTED_TOKENS[tokenA].address;
-      const tokenBAddress = SUPPORTED_TOKENS[tokenB].address;
+      // Use proper checksummed addresses
+      const tokenAAddress = await HelperUtils.toChecksumAddress(SUPPORTED_TOKENS[tokenA].address);
+      const tokenBAddress = await HelperUtils.toChecksumAddress(SUPPORTED_TOKENS[tokenB].address);
 
       // Sort tokens for pool address calculation
       const [token0, token1] = HelperUtils.sortTokens(tokenAAddress, tokenBAddress);
 
-      // Get pool address from factory
-      const poolAddress = await rpcManager.execute(async (provider) => {
-        return await factoryInfo.contract.getPool(token0, token1, feeTier);
-      });
+      // Get pool address from factory with better error handling
+      let poolAddress;
+      try {
+        poolAddress = await rpcManager.execute(async (provider) => {
+          return await factoryInfo.contract.getPool(token0, token1, feeTier);
+        });
+      } catch (error) {
+        // Handle missing revert data - this means pool doesn't exist
+        if (error.message.includes('missing revert data') || error.code === 'CALL_EXCEPTION') {
+          logger.debug(`Pool not available: ${dexName} ${tokenA}/${tokenB} ${feeTier} (pool doesn't exist)`);
+          return null;
+        }
+        throw error; // Re-throw other errors
+      }
 
       if (poolAddress === ethers.ZeroAddress) {
         logger.debug(`Pool not found: ${dexName} ${tokenA}/${tokenB} ${feeTier}`);

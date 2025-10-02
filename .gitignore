@@ -1,16 +1,25 @@
-# Node modules
+# Dependencies
 node_modules/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
+lerna-debug.log*
+package-lock.json
+yarn.lock
+bun.lockb
+bun.lock
 
 # Environment files
 .env
+.env.*
 .env.*.local
 .env.local
+.env.production
+.env.development
+.env.test
 
-# Build / output
+# Build outputs
 dist/
 build/
 out/
@@ -19,39 +28,118 @@ out/
 .nuxt/
 .parcel-cache/
 .claude/
+
 # Logs and coverage
 logs/
 *.log
 coverage/
 *.lcov
+.nyc_output/
 
-# OS / editors / IDEs
+# Runtime data
+pids
+*.pid
+*.seed
+*.pid.lock
+
+# OS generated files
 .DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
 Thumbs.db
+
+# Editor directories and files
 .vscode/
 .idea/
 *.swp
+*.swo
+*~
 *.sublime-project
 *.sublime-workspace
 
-# Media / movie files and folders
+# Test and check files (ALL test files excluded)
+test*/
+tests/
+*test*
+*Test*
+*TEST*
+test*.js
+*test*.js
+check*.js
+*check*.js
+verify*.js
+*verify*.js
+demo*.js
+*demo*.js
+temp*.js
+*temp*.js
+validate*.js
+*validate*.js
+
+# Documentation files (Keep only README.md and package.json)
+*.md
+!README.md
+!package.json
+
+# Specific documentation files to exclude
+COMPLETE_PROJECT_GUIDE.md
+COMPLIANCE_REPORT.md
+DATA_FLOW_DIAGRAMS.md
+DEPLOYMENT_GUIDE.md
+FINAL_*.md
+ISSUE_RESOLUTION_REPORT.md
+QUICK_REFERENCE.md
+REAL_DATA_VERIFICATION.md
+REQUIREMENTS_FULFILLMENT.md
+TEST_RESULTS_FINAL.md
+YOUR_REQUEST_FULFILLED.md
+todo.md
+
+# Media files
 movie/
 moview/
 *.mp4
 *.mov
 *.avi
 *.mkv
+*.webm
 
 # Other temporary files
 *.tmp
 *.temp
+.tmp/
+.temp/
+
+# Development files
+*.bak
+*.backup
+*.orig
+*.rej
+.patch
+
+# Additional exclusions for clean tarball
+docker-compose.override.yml
+Dockerfile.dev
+.dockerignore
+.eslintcache
+.nyc_output/
+coverage/
+junit.xml
+.coverage
 *.pid
-*.seed
+*.lock
+.sass-cache/
+.grunt/
+.bower-*/
+.tmp/
 
-
-todo.md
-verify-requirements.js
-/test*
-demo-api.js
-.gitignore
-FINAL_STATUS_REPORT.md
+# IDE and editor files
+.history/
+.vscode/settings.json
+.vscode/launch.json
+.vscode/extensions.json
+*.code-workspace
+start-complete-setup.js

@@ -63,7 +63,7 @@ const SUPPORTED_TOKENS = {
     decimals: 18
   },
   USDC: {
-    address: process.env.USDC_ADDRESS || '0xA0b86a33E542873Cd17b062F78deAD58C6B26cc8',
+    address: process.env.USDC_ADDRESS || '0xa0b86A33E542873CD17B062F78dEAd58c6B26cC8',
     symbol: 'USDC',
     name: 'USD Coin',
     decimals: 6

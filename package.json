@@ -6,12 +6,26 @@
   "main": "src/index.js",
   "scripts": {
     "start": "node src/index.js",
-    "dev": "nodemon src/index.js",
+    "dev": "NODE_ENV=development node src/index.js",
+    "api": "node src/api/server.js",
+    "setup": "npm install && cp .env.example .env && echo 'Setup complete! Please edit .env with your configuration.'",
+    "setup:env": "cp .env.example .env",
+    "clean": "rm -rf node_modules && rm -f package-lock.json",
+    "reinstall": "npm run clean && npm install",
     "test": "jest",
     "test:watch": "jest --watch",
     "test:coverage": "jest --coverage",
     "lint": "eslint src/**/*.js",
-    "lint:fix": "eslint src/**/*.js --fix"
+    "lint:fix": "eslint src/**/*.js --fix",
+    "docker:build": "docker build -t defi-arbitrage-bot .",
+    "docker:run": "docker-compose up -d",
+    "docker:logs": "docker-compose logs -f",
+    "docker:stop": "docker-compose down",
+    "health": "curl -s http://localhost:3000/api/health || echo 'Server not running'",
+    "logs": "tail -f logs/combined.log 2>/dev/null || echo 'No logs directory found'",
+    "logs:error": "tail -f logs/error.log 2>/dev/null || echo 'No error logs found'",
+    "validate": "node validate-setup.js",
+    "validate:syntax": "node -c src/index.js && echo 'Syntax validation passed'"
   },
   "keywords": ["defi", "arbitrage", "trading", "bot", "uniswap", "ethereum", "cryptocurrency"],
   "author": "DeFi Arbitrage Team",
@@ -34,7 +48,8 @@
     "compression": "^1.7.4",
     "joi": "^17.11.0",
     "uuid": "^9.0.1",
-    "lodash": "^4.17.21"
+    "lodash": "^4.17.21",
+    "node-fetch": "^3.3.2"
   },
   "devDependencies": {
     "nodemon": "^3.0.2",

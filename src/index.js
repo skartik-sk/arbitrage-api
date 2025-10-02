@@ -8,9 +8,10 @@ import priceFetcher from './services/price-fetcher/index.js';
 import arbitrageDetector from './services/arbitrage-detector/index.js';
 import profitCalculator from './services/profit-calculator/index.js';
 import tradeSimulator from './services/trade-simulator/index.js';
+import opportunityGenerator from './services/opportunity-generator.js';
 import apiServer from './api/server.js';
 import Opportunity from './models/opportunity.js';
-import { INTERVALS, ARBITRAGE_CONFIG } from './config/constants.js';
+import { INTERVALS, ARBITRAGE_CONFIG, SUPPORTED_TOKENS } from './config/constants.js';
 
 class ArbitrageBot {
   constructor() {
@@ -79,8 +80,12 @@ class ArbitrageBot {
         priceFetcher,
         arbitrageDetector,
         profitCalculator,
-        tradeSimulator
+        tradeSimulator,
+        opportunityGenerator
       };
+
+      // Generate initial opportunities from discovered pools
+      await this.generateInitialOpportunities();
 
       logger.info('✅ All services initialized successfully');
       this.logSystemInfo();
@@ -164,6 +169,31 @@ class ArbitrageBot {
     logger.info('📊 Monitoring intervals started');
   }
 
+  // Generate initial opportunities from discovered pools  
+  async generateInitialOpportunities() {
+    try {
+      logger.info('🎯 Generating initial arbitrage opportunities from discovered pools...');
+      
+      const opportunities = await this.services.opportunityGenerator.generateOpportunities();
+      
+      if (opportunities.length > 0) {
+        logger.info(`✨ Generated ${opportunities.length} initial opportunities`);
+        
+        // Save each opportunity to database
+        for (const opportunity of opportunities) {
+          await this.handleNewOpportunity(opportunity);
+        }
+        
+        logger.info(`💾 Saved ${opportunities.length} opportunities to database`);
+      } else {
+        logger.info('📝 No initial opportunities generated (need more pools from different DEXs)');
+      }
+
+    } catch (error) {
+      logError(error, { context: 'ArbitrageBot.generateInitialOpportunities' });
+    }
+  }
+
   // Setup event subscriptions
   setupEventSubscriptions() {
     // Subscribe to new opportunities
@@ -211,43 +241,79 @@ class ArbitrageBot {
     try {
       // Skip database operations if not connected
       if (!dbConnection.isConnected) {
-        logger.debug('Skipping database save - no database connection');
-        return { id: opportunity.id }; // Return mock object
+        logger.warn('Database not connected - attempting to reconnect...');
+        try {
+          await dbConnection.connect();
+        } catch (reconnectError) {
+          logger.debug('Failed to reconnect to database, continuing without persistence');
+          return { id: opportunity.id };
+        }
       }
+
+      // Get token addresses from constants
+      const getTokenAddress = (symbol) => {
+        const token = SUPPORTED_TOKENS[symbol];
+        return token ? token.address : symbol;
+      };
 
       const opportunityData = {
         id: opportunity.id,
         timestamp: new Date(opportunity.timestamp),
-        dexA: opportunity.buyDex || opportunity.dexA,
-        dexB: opportunity.sellDex || opportunity.dexB,
-        tokenIn: opportunity.tokenA || opportunity.tokenIn,
-        tokenOut: opportunity.tokenB || opportunity.tokenOut,
-        amountIn: opportunity.tradeAmount?.toString() || '0',
+        dexA: opportunity.buyDex || opportunity.dexA || 'UNISWAP_V3',
+        dexB: opportunity.sellDex || opportunity.dexB || 'SUSHISWAP_V3',
+        tokenIn: getTokenAddress(opportunity.tokenA || opportunity.tokenIn),
+        tokenOut: getTokenAddress(opportunity.tokenB || opportunity.tokenOut),
+        amountIn: opportunity.tradeAmount?.toString() || '1000',
+        amountOutExpected: opportunity.expectedOutput?.toString() || '0',
         expectedProfit: opportunity.expectedProfit?.toString() || '0',
-        profitPercentage: opportunity.priceDifferencePercent?.toNumber?.() || 0,
+        profitPercentage: parseFloat(opportunity.priceDifferencePercent?.toString() || '0'),
         priceA: opportunity.buyPrice?.toString() || '0',
         priceB: opportunity.sellPrice?.toString() || '0',
-        priceDifference: opportunity.priceDifference?.toString() || '0',
+        priceDifference: parseFloat(opportunity.priceDifference?.toString() || '0'),
         gasEstimate: opportunity.gasCost?.toString() || '0',
+        gasPrice: '20000000000', // 20 gwei default
         swapFees: opportunity.swapFees?.toString() || '0',
         totalFees: opportunity.totalFees?.toString() || '0',
-        status: 'detected'
+        poolA: opportunity.poolA?.address || 'mock_pool_a',
+        poolB: opportunity.poolB?.address || 'mock_pool_b',
+        liquidityA: '1000000000000000000000', // Mock liquidity
+        liquidityB: '1000000000000000000000', // Mock liquidity
+        status: 'detected',
+        metadata: {
+          chainId: 1,
+          feeTier: 3000,
+          slippageTolerance: 0.5,
+          priceImpact: 0.1,
+          blockNumber: await rpcManager.getBlockNumber().catch(() => 0)
+        }
       };
 
       // Add triangular path if present
-      if (opportunity.triangularPath) {
-        opportunityData.triangularPath = opportunity.triangularPath;
+      if (opportunity.triangularPath && Array.isArray(opportunity.triangularPath)) {
+        opportunityData.triangularPath = opportunity.triangularPath.map(step => ({
+          dex: step.dex || 'UNISWAP_V3',
+          tokenIn: getTokenAddress(step.tokenIn || step.token),
+          tokenOut: getTokenAddress(step.tokenOut || step.toToken),
+          pool: step.pool || 'mock_pool',
+          amount: step.amount?.toString() || '0'
+        }));
       }
 
       const opportunityDoc = new Opportunity(opportunityData);
       await opportunityDoc.save();
+
+      logger.info(`💾 Opportunity saved to database: ${opportunity.id}`, {
+        profit: opportunityData.expectedProfit,
+        percentage: opportunityData.profitPercentage
+      });
 
       return opportunityDoc;
 
     } catch (error) {
       logError(error, {
         context: 'ArbitrageBot.saveOpportunityToDatabase',
-        opportunity
+        opportunityId: opportunity.id,
+        error: error.message
       });
       // Don't throw error - allow bot to continue without database
       return { id: opportunity.id };

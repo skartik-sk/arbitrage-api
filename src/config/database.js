@@ -15,19 +15,26 @@ class DatabaseConnection {
         useNewUrlParser: true,
         useUnifiedTopology: true,
         maxPoolSize: 10, // Maintain up to 10 socket connections
-        serverSelectionTimeoutMS: 5000, // Keep trying to send operations for 5 seconds
+        serverSelectionTimeoutMS: 10000, // Keep trying to send operations for 10 seconds
         socketTimeoutMS: 45000, // Close sockets after 45 seconds of inactivity
         family: 4, // Use IPv4, skip trying IPv6
+        retryWrites: true,
+        w: 'majority'
       };
 
+      logger.info(`Attempting to connect to MongoDB...`);
+      logger.debug(`Connection string: ${this.connectionString.replace(/\/\/[^:]+:[^@]+@/, '//***:***@')}`);
+      
       this.connection = await mongoose.connect(this.connectionString, options);
       this.isConnected = true;
 
-      logger.info(`Connected to MongoDB: ${this.dbName}`);
+      logger.info(`✅ Connected to MongoDB successfully!`);
+      logger.info(`Database: ${mongoose.connection.db.databaseName}`);
+      logger.info(`Host: ${mongoose.connection.host}:${mongoose.connection.port}`);
 
       // Set up connection event handlers
       mongoose.connection.on('error', (err) => {
-        logger.error('MongoDB connection error:', err);
+        logger.error('MongoDB connection error:', err.message);
         this.isConnected = false;
       });
 
@@ -41,10 +48,25 @@ class DatabaseConnection {
         this.isConnected = true;
       });
 
+      // Test the connection by running a simple query
+      await mongoose.connection.db.admin().ping();
+      logger.info('✅ MongoDB ping successful');
+
       return this.connection;
     } catch (error) {
-      logger.warn('MongoDB connection failed, continuing without database:', error.message);
+      logger.error('❌ MongoDB connection failed:', {
+        message: error.message,
+        code: error.code,
+        reason: error.reason
+      });
+      
       this.isConnected = false;
+      
+      // For development, we want to know about connection issues
+      if (process.env.NODE_ENV === 'development') {
+        logger.error('Full error details:', error);
+      }
+      
       // Don't throw error - allow bot to run without database
       return null;
     }

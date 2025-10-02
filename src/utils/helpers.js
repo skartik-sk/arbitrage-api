@@ -1,6 +1,8 @@
 import { BigNumber } from '../config/constants.js';
 
 class HelperUtils {
+  // Export BigNumber for convenience
+  static BigNumber = BigNumber;
   // Format token amount with proper decimals
   static formatTokenAmount(amount, decimals) {
     return new BigNumber(amount).dividedBy(new BigNumber(10).pow(decimals));
@@ -64,6 +66,28 @@ class HelperUtils {
   // Validate address format
   static isValidAddress(address) {
     return /^0x[a-fA-F0-9]{40}$/.test(address);
+  }
+
+  // Convert address to proper EIP-55 checksum
+  static async toChecksumAddress(address) {
+    try {
+      // Import ethers dynamically to avoid circular dependencies
+      const { ethers } = await import('ethers');
+      return ethers.getAddress(address.toLowerCase());
+    } catch (error) {
+      console.warn(`Failed to checksum address: ${address}`, error);
+      return address;
+    }
+  }
+
+  // Get token address with proper checksum
+  static async getTokenAddress(tokenSymbol, supportedTokens) {
+    const tokenInfo = supportedTokens[tokenSymbol];
+    if (!tokenInfo) {
+      throw new Error(`Unsupported token: ${tokenSymbol}`);
+    }
+
+    return this.toChecksumAddress(tokenInfo.address);
   }
 
   // Sort token addresses for pool creation
