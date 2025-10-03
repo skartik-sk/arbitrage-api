@@ -54,45 +54,43 @@ const GAS_LIMITS = {
   APPROVE: 50000
 };
 
-// Supported Tokens
-const SUPPORTED_TOKENS = {
+// Fix the USDC address in src/config/constants.js
+ const SUPPORTED_TOKENS = {
   WETH: {
-    address: process.env.WETH_ADDRESS || '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2',
     symbol: 'WETH',
-    name: 'Wrapped Ether',
+    address: '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2',
     decimals: 18
   },
+  
   USDC: {
-    address: process.env.USDC_ADDRESS || '0xa0b86A33E542873CD17B062F78dEAd58c6B26cC8',
     symbol: 'USDC',
-    name: 'USD Coin',
+    address: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48', // Fixed checksum
     decimals: 6
   },
+  
   USDT: {
-    address: process.env.USDT_ADDRESS || '0xdAC17F958D2ee523a2206206994597C13D831ec7',
-    symbol: 'USDT',
-    name: 'Tether USD',
+    symbol: 'USDT', 
+    address: '0xdAC17F958D2ee523a2206206994597C13D831ec7',
     decimals: 6
   },
   WBTC: {
-    address: process.env.WBTC_ADDRESS || '0x2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599',
     symbol: 'WBTC',
-    name: 'Wrapped Bitcoin',
+    address: '0x2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599',
     decimals: 8
   },
   DAI: {
-    address: process.env.DAI_ADDRESS || '0x6B175474E89094C44Da98b954EedeAC495271d0F',
     symbol: 'DAI',
-    name: 'Dai Stablecoin',
+    address: '0x6B175474E89094C44Da98b954EedeAC495271d0F',
     decimals: 18
   }
 };
 
-// Token Pairs for Arbitrage (Only pairs with confirmed liquidity)
+// Token Pairs for Arbitrage (Available on both Uniswap V3 and SushiSwap V2)
 const TOKEN_PAIRS = [
-  ['USDT', 'WETH'],  // ✅ Available on both Uniswap V3 & SushiSwap V3
-  ['WBTC', 'WETH'],  // ✅ Available on both Uniswap V3 & SushiSwap V3  
-  ['DAI', 'WETH']    // ✅ Available on both Uniswap V3 & SushiSwap V3
+  ['USDT', 'WETH'],  // ✅ Available on Uniswap V3 (multiple fee tiers) & SushiSwap V2
+  ['WBTC', 'WETH'],  // ✅ Available on Uniswap V3 (multiple fee tiers) & SushiSwap V2
+  ['DAI', 'WETH'],   // ✅ Available on Uniswap V3 (multiple fee tiers) & SushiSwap V2
+  ['USDC', 'WETH']   // ✅ Available on Uniswap V3 (multiple fee tiers) & SushiSwap V2
 ];
 
 // Arbitrage Configuration

@@ -1,5 +1,6 @@
 import { ethers } from 'ethers';
 import poolDiscovery from '../pool-discovery.js';
+import sushiSwapV2Discovery from '../sushiswap-v2-discovery.js';
 import rpcManager from '../rpc-manager.js';
 import { SUPPORTED_TOKENS, TOKEN_PAIRS, ARBITRAGE_CONFIG, FEE_TIERS } from '../../config/constants.js';
 import { logPriceUpdate, logError, logger } from '../../utils/logger.js';
@@ -86,30 +87,31 @@ class PriceFetcher {
     try {
       const updatePromises = [];
 
-      // Update prices for all token pairs across all DEXs
+      // Update prices for all token pairs across both Uniswap V3 and SushiSwap V2
       for (const [tokenA, tokenB] of TOKEN_PAIRS) {
-        for (const dex of ['UNISWAP_V3', 'SUSHISWAP_V3']) {
-          // Try multiple fee tiers to find existing pools
-          const feeTiers = [500, 3000, 10000];
-          
-          // Find the first available pool and use that fee tier
-          let priceUpdated = false;
-          for (const feeTier of feeTiers) {
-            const poolInfo = poolDiscovery.getPool(dex, tokenA, tokenB, feeTier);
-            if (poolInfo) {
-              updatePromises.push(
-                this.updatePrice(dex, tokenA, tokenB, feeTier)
-              );
-              priceUpdated = true;
-              break; // Only update once per DEX/pair combination
-            }
-          }
-          
-          // If no pool found for any fee tier, still log it for debugging
-          if (!priceUpdated) {
-            logger.debug(`No pools found for ${dex} ${tokenA}/${tokenB} across all fee tiers`);
+        // 1. Get prices from Uniswap V3 (multiple fee tiers)
+        const v3FeeTiers = [500, 3000, 10000];
+        let v3PoolsFound = 0;
+        
+        for (const feeTier of v3FeeTiers) {
+          const poolInfo = poolDiscovery.getPool('UNISWAP_V3', tokenA, tokenB, feeTier);
+          if (poolInfo) {
+            updatePromises.push(
+              this.updatePriceV3('UNISWAP_V3', tokenA, tokenB, feeTier)
+            );
+            v3PoolsFound++;
           }
         }
+        
+        // 2. Get prices from SushiSwap V2
+        const v2Pool = sushiSwapV2Discovery.getPool(tokenA, tokenB);
+        if (v2Pool) {
+          updatePromises.push(
+            this.updatePriceV2('SUSHISWAP_V2', tokenA, tokenB)
+          );
+        }
+        
+        logger.debug(`${tokenA}/${tokenB}: V3 pools: ${v3PoolsFound}, V2 pool: ${v2Pool ? 'found' : 'not found'}`);
       }
 
       const results = await Promise.allSettled(updatePromises);
@@ -142,8 +144,8 @@ class PriceFetcher {
     }
   }
 
-  // Update price for a specific token pair on a specific DEX
-  async updatePrice(dexName, tokenA, tokenB, feeTier = 3000) {
+  // Update price for Uniswap V3
+  async updatePriceV3(dexName, tokenA, tokenB, feeTier = 3000) {
     try {
       const poolInfo = poolDiscovery.getPool(dexName, tokenA, tokenB, feeTier);
       if (!poolInfo) {
@@ -168,6 +170,7 @@ class PriceFetcher {
         dex: dexName,
         tokenA,
         tokenB,
+        feeTier,
         price,
         sqrtPriceX96: slot0.sqrtPriceX96.toString(),
         tick: slot0.tick,
@@ -176,8 +179,8 @@ class PriceFetcher {
         timestamp: Date.now()
       };
 
-      // Store price
-      const priceKey = this.getPriceKey(dexName, tokenA, tokenB);
+      // Store price with fee tier in key
+      const priceKey = this.getPriceKey(dexName, tokenA, tokenB, feeTier);
       this.prices.set(priceKey, priceData);
 
       // Store in history (keep last 100 entries)
@@ -206,7 +209,61 @@ class PriceFetcher {
         tokenA,
         tokenB,
         feeTier,
-        context: 'PriceFetcher.updatePrice'
+        context: 'PriceFetcher.updatePriceV3'
+      });
+      return null;
+    }
+  }
+
+  // Update price for SushiSwap V2
+  async updatePriceV2(dexName, tokenA, tokenB) {
+    try {
+      await sushiSwapV2Discovery.updatePoolReserves(tokenA, tokenB);
+      const price = await sushiSwapV2Discovery.calculatePrice(tokenA, tokenB);
+      
+      if (!price) {
+        logger.debug(`No price calculated for ${dexName} ${tokenA}/${tokenB}`);
+        return null;
+      }
+
+      const priceData = {
+        dex: dexName,
+        tokenA,
+        tokenB,
+        price: new HelperUtils.BigNumber(price.toString()),
+        liquidity: '1000000000', // V2 doesn't have direct liquidity measure
+        blockNumber: await rpcManager.getBlockNumber(),
+        timestamp: Date.now(),
+        feeTier: 3000 // V2 has fixed 0.3% fee
+      };
+
+      // Store price with fee tier in key for consistency
+      const priceKey = this.getPriceKey(dexName, tokenA, tokenB, 3000);
+      this.prices.set(priceKey, priceData);
+
+      // Store in history
+      if (!this.priceHistory.has(priceKey)) {
+        this.priceHistory.set(priceKey, []);
+      }
+      const history = this.priceHistory.get(priceKey);
+      history.push(priceData);
+      if (history.length > 100) {
+        history.shift();
+      }
+
+      logger.info(`💰 REAL PRICE UPDATE: ${dexName} ${tokenA}/${tokenB} = $${price.toFixed(6)} (Block: ${priceData.blockNumber})`);
+      
+      logPriceUpdate(dexName, `${tokenA}/${tokenB}`, price);
+      this.notifySubscribers(priceData);
+
+      return priceData;
+
+    } catch (error) {
+      logError(error, {
+        dex: dexName,
+        tokenA,
+        tokenB,
+        context: 'PriceFetcher.updatePriceV2'
       });
       return null;
     }
@@ -242,9 +299,19 @@ class PriceFetcher {
   }
 
   // Get current price
-  getPrice(dexName, tokenA, tokenB) {
-    const priceKey = this.getPriceKey(dexName, tokenA, tokenB);
-    return this.prices.get(priceKey);
+  getPrice(dexName, tokenA, tokenB, feeTier = null) {
+    if (feeTier) {
+      const priceKey = this.getPriceKey(dexName, tokenA, tokenB, feeTier);
+      return this.prices.get(priceKey);
+    }
+    
+    // If no fee tier specified, return the first available
+    for (const tier of [500, 3000, 10000]) {
+      const priceKey = this.getPriceKey(dexName, tokenA, tokenB, tier);
+      const price = this.prices.get(priceKey); 
+      if (price) return price;
+    }
+    return null;
   }
 
   // Get price from any DEX for token pair
@@ -359,13 +426,49 @@ class PriceFetcher {
   }
 
   // Utility methods
-  getPriceKey(dexName, tokenA, tokenB) {
-    return `${dexName}:${tokenA}-${tokenB}`;
+  getPriceKey(dexName, tokenA, tokenB, feeTier = 3000) {
+    return `${dexName}:${tokenA}-${tokenB}:${feeTier}`;
   }
 
   // Check if price is stale
   isPriceStale(priceData, maxAgeMs = 30000) {
     return !priceData || (Date.now() - priceData.timestamp) > maxAgeMs;
+  }
+
+  // Get all current prices (needed by arbitrage detector)
+  getAllPricesMap() {
+    return this.prices;
+  }
+
+  // Get current prices in simple format
+  getCurrentPricesSimple() {
+    const result = {};
+    for (const [key, priceData] of this.prices) {
+      result[key] = {
+        price: priceData.price.toString(),
+        dex: priceData.dex,
+        tokenA: priceData.tokenA,
+        tokenB: priceData.tokenB,
+        lastUpdate: priceData.timestamp,
+        blockNumber: priceData.blockNumber
+      };
+    }
+    return result;
+  }
+
+  // Start price fetching (missing method that arbitrage detector needs)
+  async startPriceFetching() {
+    if (this.isRunning) {
+      logger.info('Price fetcher already running');
+      return;
+    }
+
+    logger.info('🔄 Starting continuous price fetching...');
+    
+    // Start the price fetching loop
+    this.start(process.env.PRICE_UPDATE_INTERVAL_MS || 5000);
+    
+    logger.info('✅ Price fetching started successfully');
   }
 
   // Get all arbitrage opportunities

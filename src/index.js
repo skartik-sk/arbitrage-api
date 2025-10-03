@@ -4,6 +4,7 @@ import { logger, logError, logArbitrageOpportunity, logTradeExecution } from './
 import dbConnection from './config/database.js';
 import rpcManager from './services/rpc-manager.js';
 import poolDiscovery from './services/pool-discovery.js';
+import sushiSwapV2Discovery from './services/sushiswap-v2-discovery.js';
 import priceFetcher from './services/price-fetcher/index.js';
 import arbitrageDetector from './services/arbitrage-detector/index.js';
 import profitCalculator from './services/profit-calculator/index.js';
@@ -52,23 +53,27 @@ class ArbitrageBot {
       logger.info('🌐 Initializing RPC manager...');
       await rpcManager.initialize();
 
-      // 3. Initialize pool discovery
-      logger.info('🏊 Discovering liquidity pools...');
+      // 3. Initialize pool discovery (Uniswap V3)
+      logger.info('🏊 Discovering Uniswap V3 liquidity pools...');
       await poolDiscovery.initialize();
 
-      // 4. Initialize price fetcher
+      // 4. Initialize SushiSwap V2 discovery  
+      logger.info('🍣 Discovering SushiSwap V2 liquidity pools...');
+      await sushiSwapV2Discovery.initialize();
+
+      // 5. Initialize price fetcher
       logger.info('💰 Initializing price fetcher...');
       await priceFetcher.initialize();
 
-      // 5. Initialize arbitrage detector
+      // 6. Initialize arbitrage detector
       logger.info('🔍 Initializing arbitrage detector...');
       await arbitrageDetector.initialize();
 
-      // 6. Initialize profit calculator
+      // 7. Initialize profit calculator
       logger.info('🧮 Initializing profit calculator...');
       await profitCalculator.initialize();
 
-      // 7. Initialize trade simulator
+      // 8. Initialize trade simulator
       logger.info('🎮 Initializing trade simulator...');
       await tradeSimulator.initialize();
 
@@ -77,6 +82,7 @@ class ArbitrageBot {
         db: dbConnection,
         rpc: rpcManager,
         poolDiscovery,
+        sushiSwapV2Discovery,
         priceFetcher,
         arbitrageDetector,
         profitCalculator,
@@ -141,10 +147,15 @@ class ArbitrageBot {
   // Start core services
   async startCoreServices() {
     // Start price fetching
-    this.services.priceFetcher.start(INTERVALS.PRICE_UPDATE);
+    logger.info('📈 Starting price fetcher...');
+    await this.services.priceFetcher.startPriceFetching();
+
+    // Wait a bit for prices to be fetched
+    await new Promise(resolve => setTimeout(resolve, 3000));
 
     // Start arbitrage detection
-    this.services.arbitrageDetector.start(INTERVALS.SCAN_OPPORTUNITIES);
+    logger.info('🔍 Starting arbitrage detector...');
+    await this.services.arbitrageDetector.startDetection();
 
     logger.info('🔄 Core services started');
   }
@@ -398,8 +409,8 @@ class ArbitrageBot {
         const simpleOpp = {
           id: opportunityDoc.id,
           type: 'simple',
-          tokenA: opportunityDoc.tokenIn,
-          tokenB: opportunityDoc.tokenOut,
+          tokenA: opportunityDoc.tokenInSymbol,  // Use symbols instead of addresses
+          tokenB: opportunityDoc.tokenOutSymbol, // Use symbols instead of addresses
           buyDex: opportunityDoc.dexA,
           sellDex: opportunityDoc.dexB
         };
@@ -409,13 +420,25 @@ class ArbitrageBot {
       }
 
       // Update opportunity with simulation result
-      await opportunityDoc.markAsSimulated({
-        success: simulationResult.success,
-        actualOutput: simulationResult.finalAmount || simulationResult.profit,
-        gasUsed: simulationResult.totalGasUsed,
-        errorMessage: simulationResult.error,
-        simulationTimestamp: new Date()
-      });
+      if (typeof opportunityDoc.markAsSimulated === 'function') {
+        await opportunityDoc.markAsSimulated({
+          success: simulationResult.success,
+          actualOutput: simulationResult.finalAmount || simulationResult.profit,
+          gasUsed: simulationResult.totalGasUsed,
+          errorMessage: simulationResult.error,
+          simulationTimestamp: new Date()
+        });
+      } else {
+        // Fallback: update directly in database
+        await Opportunity.findByIdAndUpdate(opportunityDoc._id, {
+          status: simulationResult.success ? 'profitable' : 'unprofitable',
+          'simulationResult.success': simulationResult.success,
+          'simulationResult.actualOutput': simulationResult.finalAmount || simulationResult.profit,
+          'simulationResult.gasUsed': simulationResult.totalGasUsed,
+          'simulationResult.errorMessage': simulationResult.error,
+          'simulationResult.simulationTimestamp': new Date()
+        });
+      }
 
       // If simulation is successful and profitable, execute trade (if enabled)
       if (simulationResult.success &&

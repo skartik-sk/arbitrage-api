@@ -40,7 +40,7 @@ class DatabaseConnection {
 
       mongoose.connection.on('disconnected', () => {
         logger.warn('MongoDB disconnected');
-        this.isConnected = false;
+        dbConnection.isConnected = false;
       });
 
       mongoose.connection.on('reconnected', () => {

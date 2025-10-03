@@ -55,6 +55,11 @@ class TradeSimulator {
       const tokenAInfo = SUPPORTED_TOKENS[tokenA];
       const tokenBInfo = SUPPORTED_TOKENS[tokenB];
 
+      // Check if token info exists
+      if (!tokenAInfo || !tokenBInfo) {
+        throw new Error(`Token information not found for ${tokenA} or ${tokenB}`);
+      }
+
       // Parse trade amount to token units
       const amountIn = HelperUtils.parseTokenAmount(tradeAmount, tokenAInfo.decimals);
 

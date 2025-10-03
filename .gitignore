@@ -145,3 +145,4 @@ junit.xml
 start-complete-setup.js
 clear-database.js
 debug-price-fetching.js
+create-mock-data.js

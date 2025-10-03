@@ -20,12 +20,12 @@ const opportunitySchema = new mongoose.Schema({
   dexA: {
     type: String,
     required: true,
-    enum: ['UNISWAP_V3', 'SUSHISWAP_V3', 'PANCAKESWAP_V3', 'QUICKSWAP_V3']
+    enum: ['UNISWAP', 'SUSHISWAP', 'PANCAKESWAP', 'QUICKSWAP', 'UNISWAP_V3', 'SUSHISWAP_V2']
   },
   dexB: {
     type: String,
     required: true,
-    enum: ['UNISWAP_V3', 'SUSHISWAP_V3', 'PANCAKESWAP_V3', 'QUICKSWAP_V3']
+    enum: ['UNISWAP', 'SUSHISWAP', 'PANCAKESWAP', 'QUICKSWAP', 'UNISWAP_V3', 'SUSHISWAP_V2']
   },
 
   // Token Information

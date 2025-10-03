@@ -3,21 +3,22 @@
 const DEX_CONFIG = {
   UNISWAP_V3: {
     name: 'Uniswap V3',
+    version: 'V3',
     factory: process.env.UNISWAP_V3_FACTORY || '0x1F98431c8aD98523631AE4a59f267346ea31F984',
     router: process.env.UNISWAP_V3_ROUTER || '0xE592427A0AEce92De3Edee1F18E0157C05861564',
     quoter: process.env.UNISWAP_V3_QUOTER || '0xb27308f9F90D607463bb33eA1BeBb41C27CE5AB6',
     chainId: 1,
-    feeTiers: [100, 500, 3000, 10000],
+    feeTiers: [500, 3000, 10000],
     pools: {},
     supportedChains: ['ETHEREUM']
   },
-  SUSHISWAP_V3: {
-    name: 'SushiSwap V3',
-    factory: process.env.SUSHISWAP_V3_FACTORY || '0xbACEB8eC6b9355Dfc0269C18bac9d6E2Bdc29C4F',
-    router: process.env.SUSHISWAP_V3_ROUTER || '0x2214A42d8e2A1d20635c2cb0664422c528B6A432',
-    quoter: process.env.SUSHISWAP_V3_QUOTER || '0x64e8802FE490fa7cc61d3463958199161Bb608A7',
+  SUSHISWAP_V2: {
+    name: 'SushiSwap V2',
+    version: 'V2',
+    factory: '0xC0AEe478e3658e2610c5F7A4A2E1777cE9e4f2Ac',
+    router: '0xd9e1cE17f2641f24aE83637ab66a2cca9C378B9F',
     chainId: 1,
-    feeTiers: [100, 500, 3000, 10000],
+    feeTiers: [3000], // V2 uses fixed 0.3% fee
     pools: {},
     supportedChains: ['ETHEREUM']
   }
