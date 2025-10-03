@@ -5,9 +5,11 @@
   "description": "DeFi Arbitrage Trading Bot for detecting and executing profitable trades across multiple DEXs",
   "main": "src/index.js",
   "scripts": {
-    "start": "node src/index.js",
+    "build": "echo 'Build completed'",
+    "start": "node api/index.js",
     "dev": "NODE_ENV=development node src/index.js",
     "api": "node src/api/server.js",
+    "bot": "node src/index.js",
     "setup": "npm install && cp .env.example .env && echo 'Setup complete! Please edit .env with your configuration.'",
     "setup:env": "cp .env.example .env",
     "clean": "rm -rf node_modules && rm -f package-lock.json",
