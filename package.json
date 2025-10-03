@@ -5,7 +5,7 @@
   "description": "DeFi Arbitrage Trading Bot for detecting and executing profitable trades across multiple DEXs",
   "main": "src/index.js",
   "scripts": {
-    "build": "echo 'Build completed'",
+    "build": "echo 'No build step required for serverless API'",
     "start": "node api/index.js",
     "dev": "NODE_ENV=development node src/index.js",
     "api": "node src/api/server.js",
