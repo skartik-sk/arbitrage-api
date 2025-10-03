@@ -88,15 +88,11 @@ const SUPPORTED_TOKENS = {
   }
 };
 
-// Token Pairs for Arbitrage
+// Token Pairs for Arbitrage (Only pairs with confirmed liquidity)
 const TOKEN_PAIRS = [
-  ['USDC', 'WETH'],
-  ['USDT', 'WETH'],
-  ['USDC', 'USDT'],
-  ['WBTC', 'WETH'],
-  ['WBTC', 'USDC'],
-  ['DAI', 'USDC'],
-  ['DAI', 'WETH']
+  ['USDT', 'WETH'],  // ✅ Available on both Uniswap V3 & SushiSwap V3
+  ['WBTC', 'WETH'],  // ✅ Available on both Uniswap V3 & SushiSwap V3  
+  ['DAI', 'WETH']    // ✅ Available on both Uniswap V3 & SushiSwap V3
 ];
 
 // Arbitrage Configuration

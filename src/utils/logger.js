@@ -97,12 +97,15 @@ const logError = (error, context = {}) => {
   });
 };
 
-const logPriceUpdate = (dex, tokenPair, price) => {
-  logger.debug('Price updated', {
+const logPriceUpdate = (dex, tokenPair, price, additionalData = {}) => {
+  const priceValue = typeof price === 'object' && price.toString ? price.toString() : price;
+  logger.info(`💰 REAL-TIME PRICE: ${dex} ${tokenPair} = $${priceValue}`, {
     type: 'PRICE_UPDATE',
     dex,
     tokenPair,
-    price: price.toString()
+    price: priceValue,
+    timestamp: new Date().toISOString(),
+    ...additionalData
   });
 };
 

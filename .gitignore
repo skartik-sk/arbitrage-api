@@ -143,3 +143,5 @@ junit.xml
 .vscode/extensions.json
 *.code-workspace
 start-complete-setup.js
+clear-database.js
+debug-price-fetching.js

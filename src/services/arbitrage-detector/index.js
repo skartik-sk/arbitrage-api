@@ -202,8 +202,16 @@ class ArbitrageDetector {
         swapFees,
         gasCost: estimatedGasCost,
         totalFees,
-        poolA: { address: 'pool_' + bestBuy.dex + '_' + tokenA + '_' + tokenB },
-        poolB: { address: 'pool_' + bestSell.dex + '_' + tokenA + '_' + tokenB },
+        poolA: { 
+          address: bestBuy.poolAddress || `pool_${bestBuy.dex}_${tokenA}_${tokenB}`,
+          liquidity: bestBuy.liquidity || '1000000000000000000000',
+          blockNumber: bestBuy.blockNumber || 0
+        },
+        poolB: { 
+          address: bestSell.poolAddress || `pool_${bestSell.dex}_${tokenA}_${tokenB}`,
+          liquidity: bestSell.liquidity || '1000000000000000000000',
+          blockNumber: bestSell.blockNumber || 0
+        },
         timestamp: Date.now(),
         status: 'detected',
         // Additional metadata for database

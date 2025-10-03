@@ -74,17 +74,37 @@ const opportunitySchema = new mongoose.Schema({
     required: true
   },
 
-  // Profit calculation
+  // Detailed Profit Information
   expectedProfit: {
     type: String,
     required: true
+  },
+  expectedProfitUSD: {
+    type: Number,
+    required: true,
+    default: 0
   },
   profitPercentage: {
     type: Number,
     required: true
   },
+  grossProfitUSD: {
+    type: Number,
+    required: true,
+    default: 0
+  },
+  netProfitUSD: {
+    type: Number,
+    required: true,
+    default: 0
+  },
+  profitAfterFeesUSD: {
+    type: Number,
+    required: true,
+    default: 0
+  },
 
-  // Fee information
+  // Fee information (detailed breakdown)
   gasEstimate: {
     type: String,
     required: true
@@ -93,16 +113,31 @@ const opportunitySchema = new mongoose.Schema({
     type: String,
     required: true
   },
+  gasCostUSD: {
+    type: Number,
+    required: true,
+    default: 0
+  },
   swapFees: {
     type: String,
     required: true
+  },
+  swapFeesUSD: {
+    type: Number,
+    required: true,
+    default: 0
   },
   totalFees: {
     type: String,
     required: true
   },
+  totalFeesUSD: {
+    type: Number,
+    required: true,
+    default: 0
+  },
 
-  // Pool information
+  // Pool information (real-time data)
   poolA: {
     type: String,
     required: true
@@ -118,6 +153,44 @@ const opportunitySchema = new mongoose.Schema({
   liquidityB: {
     type: String,
     required: true
+  },
+  liquidityAUSD: {
+    type: Number,
+    required: false,
+    default: 0
+  },
+  liquidityBUSD: {
+    type: Number,
+    required: false,
+    default: 0
+  },
+  
+  // Real-time blockchain data
+  blockNumber: {
+    type: Number,
+    required: true
+  },
+  blockTimestamp: {
+    type: Date,
+    required: true,
+    default: Date.now
+  },
+  
+  // Token symbols for readability
+  tokenInSymbol: {
+    type: String,
+    required: true
+  },
+  tokenOutSymbol: {
+    type: String,
+    required: true
+  },
+  
+  // Trade size information
+  tradeSizeUSD: {
+    type: Number,
+    required: true,
+    default: 1000
   },
 
   // Status tracking

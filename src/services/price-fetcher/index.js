@@ -20,15 +20,21 @@ class PriceFetcher {
     try {
       logger.info('Initializing price fetcher...');
 
-      // Wait for pool discovery to be ready
+      // Wait for pools to be discovered (be more flexible)
       let retries = 0;
-      while (!poolDiscovery.isInitialized && retries < 10) {
-        await HelperUtils.sleep(1000);
+      while (!poolDiscovery.isInitialized && retries < 5) {
+        await HelperUtils.sleep(2000);
         retries++;
+        logger.info(`Waiting for pool discovery... (attempt ${retries}/5, pools found: ${poolDiscovery.getTotalPools()})`);
       }
 
-      if (!poolDiscovery.isInitialized) {
-        throw new Error('Pool discovery not initialized');
+      // Continue even if pool discovery isn't fully complete but has some pools
+      if (!poolDiscovery.isInitialized && poolDiscovery.getTotalPools() === 0) {
+        throw new Error('No pools discovered - cannot proceed');
+      }
+      
+      if (poolDiscovery.getTotalPools() > 0) {
+        logger.info(`✅ Proceeding with ${poolDiscovery.getTotalPools()} discovered pools`);
       }
 
       // Fetch initial prices
@@ -83,9 +89,26 @@ class PriceFetcher {
       // Update prices for all token pairs across all DEXs
       for (const [tokenA, tokenB] of TOKEN_PAIRS) {
         for (const dex of ['UNISWAP_V3', 'SUSHISWAP_V3']) {
-          updatePromises.push(
-            this.updatePrice(dex, tokenA, tokenB, FEE_TIERS.MEDIUM)
-          );
+          // Try multiple fee tiers to find existing pools
+          const feeTiers = [500, 3000, 10000];
+          
+          // Find the first available pool and use that fee tier
+          let priceUpdated = false;
+          for (const feeTier of feeTiers) {
+            const poolInfo = poolDiscovery.getPool(dex, tokenA, tokenB, feeTier);
+            if (poolInfo) {
+              updatePromises.push(
+                this.updatePrice(dex, tokenA, tokenB, feeTier)
+              );
+              priceUpdated = true;
+              break; // Only update once per DEX/pair combination
+            }
+          }
+          
+          // If no pool found for any fee tier, still log it for debugging
+          if (!priceUpdated) {
+            logger.debug(`No pools found for ${dex} ${tokenA}/${tokenB} across all fee tiers`);
+          }
         }
       }
 
@@ -103,6 +126,11 @@ class PriceFetcher {
       });
 
       this.lastUpdate = Date.now();
+
+      if (successful > 0) {
+        logger.info(`📈 REAL-TIME PRICE UPDATE: ${successful} prices fetched from blockchain, ${failed} failed`);
+        this.logCurrentPrices();
+      }
 
       if (failed > 0) {
         logger.warn(`Price update completed: ${successful} successful, ${failed} failed`);
@@ -162,6 +190,9 @@ class PriceFetcher {
         history.shift();
       }
 
+      // Log real-time price with detailed info
+      logger.info(`💰 REAL PRICE UPDATE: ${dexName} ${tokenA}/${tokenB} = $${price.toFixed(6)} (Block: ${priceData.blockNumber}, Liquidity: ${liquidity.toString()})`);
+      
       logPriceUpdate(dexName, `${tokenA}/${tokenB}`, price);
 
       // Notify subscribers
@@ -349,6 +380,27 @@ class PriceFetcher {
     }
 
     return opportunities.sort((a, b) => b.percentage.minus(a.percentage));
+  }
+
+  // Log current prices to prove real data
+  logCurrentPrices() {
+    if (this.prices.size === 0) {
+      logger.info('📊 No prices available yet');
+      return;
+    }
+
+    logger.info('📊 CURRENT REAL-TIME PRICES FROM BLOCKCHAIN:');
+    logger.info('================================================');
+    
+    const sortedPrices = Array.from(this.prices.values())
+      .sort((a, b) => a.dex.localeCompare(b.dex) || a.tokenA.localeCompare(b.tokenA));
+
+    for (const priceData of sortedPrices) {
+      const ageMinutes = Math.floor((Date.now() - priceData.timestamp) / 60000);
+      logger.info(`💎 ${priceData.dex}: ${priceData.tokenA}/${priceData.tokenB} = $${priceData.price.toFixed(8)} (${ageMinutes}m ago, Block: ${priceData.blockNumber})`);
+    }
+    
+    logger.info('================================================');
   }
 
   // Cleanup old price data

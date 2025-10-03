@@ -59,18 +59,48 @@ class PoolDiscovery {
   // Discover all pools for supported token pairs
   async discoverAllPools() {
     try {
+      const discoveryPromises = [];
+      
       for (const [dexName, factoryInfo] of this.factoryContracts) {
         for (const [tokenA, tokenB] of TOKEN_PAIRS) {
-          for (const feeTier of factoryInfo.config.feeTiers) {
-            await this.discoverPool(dexName, tokenA, tokenB, feeTier);
+          // Only check the most common fee tiers to speed up discovery
+          const feeTiers = [3000, 500]; // Focus on 0.3% and 0.05% pools
+          for (const feeTier of feeTiers) {
+            // Add timeout to prevent hanging
+            const timeoutPromise = new Promise((resolve) => {
+              setTimeout(() => resolve(null), 5000); // 5 second timeout per pool
+            });
+            
+            const discoveryPromise = Promise.race([
+              this.discoverPool(dexName, tokenA, tokenB, feeTier),
+              timeoutPromise
+            ]).catch(error => {
+              logger.debug(`Pool discovery failed for ${dexName} ${tokenA}/${tokenB}: ${error.message}`);
+              return null;
+            });
+            
+            discoveryPromises.push(discoveryPromise);
           }
         }
       }
 
-      logger.info(`Pool discovery completed. Total pools found: ${this.getTotalPools()}`);
+      // Execute all discoveries with limited concurrency
+      const batchSize = 5;
+      for (let i = 0; i < discoveryPromises.length; i += batchSize) {
+        const batch = discoveryPromises.slice(i, i + batchSize);
+        await Promise.allSettled(batch);
+        
+        // Log progress
+        if (i % 10 === 0) {
+          logger.info(`Pool discovery progress: ${Math.min(i + batchSize, discoveryPromises.length)}/${discoveryPromises.length} (${this.getTotalPools()} found)`);
+        }
+      }
+
+      logger.info(`✅ Pool discovery completed. Total pools found: ${this.getTotalPools()}`);
     } catch (error) {
       logError(error, { context: 'PoolDiscovery.discoverAllPools' });
-      throw error;
+      // Don't throw - continue with whatever pools we found
+      logger.warn(`Pool discovery encountered errors but continuing with ${this.getTotalPools()} discovered pools`);
     }
   }
 
