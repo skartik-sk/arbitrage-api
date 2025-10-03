@@ -3,6 +3,7 @@ import { SUPPORTED_TOKENS, TOKEN_PAIRS, ARBITRAGE_CONFIG, FEE_TIERS } from '../.
 import { logArbitrageOpportunity, logError, logger } from '../../utils/logger.js';
 import HelperUtils from '../../utils/helpers.js';
 import rpcManager from '../rpc-manager.js';
+import priceNormalizer from '../../utils/price-normalizer.js';
 
 class ArbitrageDetector {
   constructor() {
@@ -179,7 +180,9 @@ class ArbitrageDetector {
       logger.info(`   📊 Found ${relevantPrices.length} price points for ${tokenA}/${tokenB}`);
       
       for (const price of relevantPrices) {
-        logger.info(`   💰 ${price.dex} ${price.tokenA}/${price.tokenB} (${price.feeTier || 'N/A'}): $${price.price.toString().substring(0, 10)}`);
+        const normalizedPrice = priceNormalizer.normalizePrice(price.tokenA, price.tokenB, parseFloat(price.price.toString()));
+        const displayInfo = normalizedPrice ? normalizedPrice.displayPrice : { description: 'Invalid price' };
+        logger.info(`   💰 ${price.dex} ${price.tokenA}/${price.tokenB} (${price.feeTier || 'N/A'}): ${displayInfo.description}`);
       }
 
       if (relevantPrices.length < 2) {
@@ -249,18 +252,33 @@ class ArbitrageDetector {
         return null;
       }
 
-      // Calculate potential profit for a sample trade amount
-      const tradeAmount = new HelperUtils.BigNumber(1000); // $1000 worth
+      // Calculate potential profit for a sample trade amount using proper price normalization
+      const tradeAmountUSD = 1000; // $1000 worth
+      
+      // Use price normalizer for accurate calculations
+      const arbitrageCalc = priceNormalizer.calculateArbitrageOpportunity(
+        tokenA, 
+        tokenB, 
+        parseFloat(bestBuy.price.toString()), 
+        parseFloat(bestSell.price.toString()),
+        tradeAmountUSD
+      );
+
+      if (!arbitrageCalc || !arbitrageCalc.profitable) {
+        logger.debug(`Arbitrage not profitable for ${tokenA}/${tokenB} after normalization`);
+        return null;
+      }
 
       // Calculate fees
+      const tradeAmount = new HelperUtils.BigNumber(tradeAmountUSD);
       const swapFees = this.calculateSwapFees(tradeAmount, bestBuy.dex, bestSell.dex);
       const estimatedGasCost = await this.estimateGasCost(bestBuy.dex, bestSell.dex);
       const totalFees = swapFees.plus(estimatedGasCost);
 
-      // Calculate expected profit
-      const grossProfit = tradeAmount.multipliedBy(priceDifferencePercent.dividedBy(100));
+      // Use normalized profit calculation
+      const grossProfit = new HelperUtils.BigNumber(arbitrageCalc.profitUSD);
       const expectedOutput = tradeAmount.plus(grossProfit);
-      const expectedProfit = grossProfit.minus(totalFees);
+      const expectedProfit = grossProfit.minus(parseFloat(totalFees.toString()));
 
       if (!HelperUtils.meetsProfitThreshold(expectedProfit, ARBITRAGE_CONFIG.MIN_PROFIT_THRESHOLD_USD)) {
         return null;
@@ -277,14 +295,21 @@ class ArbitrageDetector {
         sellPool: bestSell.poolId,
         buyPrice: bestBuy.price,
         sellPrice: bestSell.price,
-        priceDifference: priceDifference,
-        priceDifferencePercent,
+        priceDifference: new HelperUtils.BigNumber(arbitrageCalc.priceDifference),
+        priceDifferencePercent: new HelperUtils.BigNumber(arbitrageCalc.priceDifferencePercent),
         tradeAmount,
         expectedOutput,
         expectedProfit,
         swapFees,
         gasCost: estimatedGasCost,
         totalFees,
+        
+        // Add normalized price information
+        normalizedPrices: {
+          buyPriceUSD: priceNormalizer.getUsdPrice(tokenA),
+          sellPriceUSD: priceNormalizer.getUsdPrice(tokenB),
+          explanation: arbitrageCalc.explanation
+        },
         poolA: { 
           address: bestBuy.poolAddress || `pool_${bestBuy.dex}_${tokenA}_${tokenB}`,
           liquidity: bestBuy.liquidity || '1000000000000000000000',
@@ -610,21 +635,29 @@ class ArbitrageDetector {
       const tokenAInfo = SUPPORTED_TOKENS[opportunity.tokenA];
       const tokenBInfo = SUPPORTED_TOKENS[opportunity.tokenB];
       
-      // Convert BigNumber values to regular numbers for database storage
+      // Convert BigNumber values to regular numbers for database storage with clear field meanings
       const dbOpportunity = {
         id: opportunity.id,
         timestamp: new Date(opportunity.timestamp),
-        tokenIn: tokenAInfo?.address || opportunity.tokenA,
-        tokenOut: tokenBInfo?.address || opportunity.tokenB,
-        tokenInSymbol: opportunity.tokenA,
-        tokenOutSymbol: opportunity.tokenB,
-        dexA: opportunity.buyDex === 'SUSHISWAP' ? 'SUSHISWAP' : 'UNISWAP',
-        dexB: opportunity.sellDex === 'SUSHISWAP' ? 'SUSHISWAP' : 'UNISWAP',
-        amountIn: opportunity.tradeAmount?.toString() || '1000',
-        amountOutExpected: opportunity.expectedOutput?.toString() || '0',
-        priceA: opportunity.buyPrice?.toString() || '0',
-        priceB: opportunity.sellPrice?.toString() || '0',
-        priceDifference: parseFloat(opportunity.priceDifference?.toString() || '0'),
+        
+        // Token addresses and symbols  
+        tokenIn: tokenAInfo?.address || opportunity.tokenA,  // Contract address of token to buy
+        tokenOut: tokenBInfo?.address || opportunity.tokenB, // Contract address of token to receive
+        tokenInSymbol: opportunity.tokenA,   // Human-readable symbol (e.g., "USDT")
+        tokenOutSymbol: opportunity.tokenB,  // Human-readable symbol (e.g., "WETH")
+        
+        // DEX information
+        dexA: opportunity.buyDex === 'SUSHISWAP' ? 'SUSHISWAP' : 'UNISWAP',  // Where to BUY (cheaper price)
+        dexB: opportunity.sellDex === 'SUSHISWAP' ? 'SUSHISWAP' : 'UNISWAP', // Where to SELL (higher price)
+        
+        // Trade amounts
+        amountIn: opportunity.tradeAmount?.toString() || '1000',        // USD amount to trade ($1000)
+        amountOutExpected: opportunity.expectedOutput?.toString() || '0', // Expected USD output after trade
+        
+        // Price information (token ratios, NOT USD prices)
+        priceA: parseFloat(opportunity.buyPrice?.toString() || '0').toFixed(8),   // Price on DEX A (buy here - cheaper)
+        priceB: parseFloat(opportunity.sellPrice?.toString() || '0').toFixed(8),  // Price on DEX B (sell here - higher)
+        priceDifference: parseFloat(opportunity.priceDifference?.toString() || '0'), // Absolute price difference
         expectedProfit: opportunity.expectedProfit?.toString() || '0',
         expectedProfitUSD: parseFloat(opportunity.expectedProfit?.toString() || '0'),
         profitPercentage: parseFloat(opportunity.priceDifferencePercent?.toString() || '0'),
