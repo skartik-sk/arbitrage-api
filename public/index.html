@@ -1,0 +1,403 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DeFi Arbitrage Bot Dashboard</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        
+        .header {
+            text-align: center;
+            color: white;
+            margin-bottom: 30px;
+        }
+        
+        .header h1 {
+            font-size: 2.5rem;
+            margin-bottom: 10px;
+        }
+        
+        .status {
+            display: inline-block;
+            padding: 5px 15px;
+            background: #4CAF50;
+            color: white;
+            border-radius: 20px;
+            font-size: 0.9rem;
+        }
+        
+        .dashboard {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+        
+        .card {
+            background: white;
+            border-radius: 10px;
+            padding: 20px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            transition: transform 0.3s ease;
+        }
+        
+        .card:hover {
+            transform: translateY(-5px);
+        }
+        
+        .card h3 {
+            color: #2c3e50;
+            margin-bottom: 15px;
+            border-bottom: 2px solid #3498db;
+            padding-bottom: 10px;
+        }
+        
+        .metric {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 10px;
+            padding: 8px 0;
+            border-bottom: 1px solid #eee;
+        }
+        
+        .metric:last-child {
+            border-bottom: none;
+        }
+        
+        .metric-value {
+            font-weight: bold;
+            color: #27ae60;
+        }
+        
+        .opportunities {
+            background: white;
+            border-radius: 10px;
+            padding: 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+        
+        .opportunities h3 {
+            color: #2c3e50;
+            margin-bottom: 20px;
+            text-align: center;
+        }
+        
+        .opportunity {
+            background: #f8f9fa;
+            border-left: 4px solid #3498db;
+            padding: 15px;
+            margin-bottom: 15px;
+            border-radius: 5px;
+        }
+        
+        .opportunity-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+        
+        .token-pair {
+            font-weight: bold;
+            color: #2c3e50;
+            font-size: 1.1rem;
+        }
+        
+        .profit {
+            background: #27ae60;
+            color: white;
+            padding: 5px 10px;
+            border-radius: 15px;
+            font-size: 0.9rem;
+        }
+        
+        .opportunity-details {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 10px;
+            margin-top: 10px;
+        }
+        
+        .detail {
+            font-size: 0.9rem;
+            color: #666;
+        }
+        
+        .detail strong {
+            color: #2c3e50;
+        }
+        
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: #666;
+        }
+        
+        .error {
+            background: #e74c3c;
+            color: white;
+            padding: 15px;
+            border-radius: 5px;
+            margin-bottom: 20px;
+            text-align: center;
+        }
+        
+        .refresh-btn {
+            background: #3498db;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 1rem;
+            margin: 10px;
+            transition: background 0.3s ease;
+        }
+        
+        .refresh-btn:hover {
+            background: #2980b9;
+        }
+        
+        .api-url {
+            background: #2c3e50;
+            color: white;
+            padding: 10px;
+            border-radius: 5px;
+            margin-bottom: 20px;
+            font-family: monospace;
+            word-break: break-all;
+        }
+        
+        @media (max-width: 768px) {
+            .header h1 {
+                font-size: 2rem;
+            }
+            
+            .dashboard {
+                grid-template-columns: 1fr;
+            }
+            
+            .opportunity-details {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🚀 DeFi Arbitrage Bot</h1>
+            <div class="status" id="status">Loading...</div>
+            <div class="api-url" id="apiUrl">API URL: Loading...</div>
+        </div>
+        
+        <div class="dashboard">
+            <div class="card">
+                <h3>📊 System Health</h3>
+                <div id="healthMetrics">
+                    <div class="loading">Loading health data...</div>
+                </div>
+            </div>
+            
+            <div class="card">
+                <h3>📈 Statistics</h3>
+                <div id="statsMetrics">
+                    <div class="loading">Loading statistics...</div>
+                </div>
+            </div>
+            
+            <div class="card">
+                <h3>💰 Current Prices</h3>
+                <div id="priceMetrics">
+                    <div class="loading">Loading price data...</div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="opportunities">
+            <h3>🎯 Recent Arbitrage Opportunities</h3>
+            <button class="refresh-btn" onclick="loadDashboard()">🔄 Refresh Data</button>
+            <div id="opportunitiesList">
+                <div class="loading">Loading opportunities...</div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Configuration
+        const API_BASE_URL = window.location.origin; // Will use same domain as this page
+        
+        // Update API URL display
+        document.getElementById('apiUrl').textContent = `API URL: ${API_BASE_URL}/api`;
+        
+        // Load dashboard data
+        async function loadDashboard() {
+            try {
+                document.getElementById('status').textContent = 'Loading...';
+                document.getElementById('status').style.background = '#f39c12';
+                
+                await Promise.all([
+                    loadHealth(),
+                    loadStats(),
+                    loadPrices(),
+                    loadOpportunities()
+                ]);
+                
+                document.getElementById('status').textContent = 'Online';
+                document.getElementById('status').style.background = '#4CAF50';
+                
+            } catch (error) {
+                console.error('Dashboard error:', error);
+                document.getElementById('status').textContent = 'Error';
+                document.getElementById('status').style.background = '#e74c3c';
+            }
+        }
+        
+        // Load health data
+        async function loadHealth() {
+            try {
+                const response = await fetch(`${API_BASE_URL}/api/health`);
+                const data = await response.json();
+                
+                const healthHtml = `
+                    <div class="metric">
+                        <span>Status:</span>
+                        <span class="metric-value">${data.status}</span>
+                    </div>
+                    <div class="metric">
+                        <span>Database:</span>
+                        <span class="metric-value">${data.services.database}</span>
+                    </div>
+                    <div class="metric">
+                        <span>API:</span>
+                        <span class="metric-value">${data.services.api}</span>
+                    </div>
+                    <div class="metric">
+                        <span>Uptime:</span>
+                        <span class="metric-value">${Math.floor(data.uptime)}s</span>
+                    </div>
+                    <div class="metric">
+                        <span>Version:</span>
+                        <span class="metric-value">${data.version}</span>
+                    </div>
+                `;
+                
+                document.getElementById('healthMetrics').innerHTML = healthHtml;
+            } catch (error) {
+                document.getElementById('healthMetrics').innerHTML = '<div class="error">Failed to load health data</div>';
+            }
+        }
+        
+        // Load statistics
+        async function loadStats() {
+            try {
+                const response = await fetch(`${API_BASE_URL}/api/stats`);
+                const data = await response.json();
+                
+                const statsHtml = `
+                    <div class="metric">
+                        <span>Total Opportunities:</span>
+                        <span class="metric-value">${data.overview.totalOpportunities}</span>
+                    </div>
+                    <div class="metric">
+                        <span>Last 24h:</span>
+                        <span class="metric-value">${data.timeWindows.last24Hours.count}</span>
+                    </div>
+                    <div class="metric">
+                        <span>Avg Profit (24h):</span>
+                        <span class="metric-value">$${data.timeWindows.last24Hours.avgProfit?.toFixed(2) || '0.00'}</span>
+                    </div>
+                    <div class="metric">
+                        <span>Max Profit (24h):</span>
+                        <span class="metric-value">$${data.timeWindows.last24Hours.maxProfit?.toFixed(2) || '0.00'}</span>
+                    </div>
+                    <div class="metric">
+                        <span>Per Hour Rate:</span>
+                        <span class="metric-value">${data.performance.opportunitiesPerHour || 0}</span>
+                    </div>
+                `;
+                
+                document.getElementById('statsMetrics').innerHTML = statsHtml;
+            } catch (error) {
+                document.getElementById('statsMetrics').innerHTML = '<div class="error">Failed to load statistics</div>';
+            }
+        }
+        
+        // Load current prices
+        async function loadPrices() {
+            try {
+                const response = await fetch(`${API_BASE_URL}/api/prices`);
+                const data = await response.json();
+                
+                const pricesHtml = data.realTime.map(price => `
+                    <div class="metric">
+                        <span>${price.dex} ${price.tokenPair}:</span>
+                        <span class="metric-value">${price.price.toFixed(6)}</span>
+                    </div>
+                `).join('');
+                
+                document.getElementById('priceMetrics').innerHTML = pricesHtml || '<div class="loading">No price data available</div>';
+            } catch (error) {
+                document.getElementById('priceMetrics').innerHTML = '<div class="error">Failed to load price data</div>';
+            }
+        }
+        
+        // Load opportunities
+        async function loadOpportunities() {
+            try {
+                const response = await fetch(`${API_BASE_URL}/api/opportunities?limit=10`);
+                const data = await response.json();
+                
+                if (data.opportunities && data.opportunities.length > 0) {
+                    const opportunitiesHtml = data.opportunities.map(opp => `
+                        <div class="opportunity">
+                            <div class="opportunity-header">
+                                <div class="token-pair">${opp.pairFormatted}</div>
+                                <div class="profit">${opp.profitFormatted}</div>
+                            </div>
+                            <div class="opportunity-details">
+                                <div class="detail"><strong>Route:</strong> ${opp.dexRoute}</div>
+                                <div class="detail"><strong>Status:</strong> ${opp.status}</div>
+                                <div class="detail"><strong>Age:</strong> ${opp.ageFormatted}</div>
+                                <div class="detail"><strong>Trade Size:</strong> $${opp.tradeSizeUSD}</div>
+                            </div>
+                        </div>
+                    `).join('');
+                    
+                    document.getElementById('opportunitiesList').innerHTML = opportunitiesHtml;
+                } else {
+                    document.getElementById('opportunitiesList').innerHTML = '<div class="loading">No opportunities found</div>';
+                }
+            } catch (error) {
+                document.getElementById('opportunitiesList').innerHTML = '<div class="error">Failed to load opportunities</div>';
+            }
+        }
+        
+        // Auto-refresh every 30 seconds
+        setInterval(loadDashboard, 30000);
+        
+        // Initial load
+        loadDashboard();
+    </script>
+</body>
+</html>

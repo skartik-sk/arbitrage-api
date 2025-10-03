@@ -1,0 +1,18 @@
+{
+  "timestamp": "2025-10-03T12:54:14.185Z",
+  "readyForDeployment": true,
+  "endpoints": [
+    "/api/health",
+    "/api/opportunities",
+    "/api/stats",
+    "/api/simulate",
+    "/api/prices"
+  ],
+  "environmentVariables": [
+    "DATABASE_URL",
+    "ETHEREUM_RPC",
+    "NODE_ENV"
+  ],
+  "deploymentPlatform": "Vercel",
+  "status": "Ready"
+}

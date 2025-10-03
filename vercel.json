@@ -1,13 +1,53 @@
 {
+  "version": 2,
+  "name": "defi-arbitrage-api",
+  "builds": [
+    {
+      "src": "api/*.js",
+      "use": "@vercel/node"
+    }
+  ],
+  "routes": [
+    {
+      "src": "/api/health",
+      "dest": "/api/health.js"
+    },
+    {
+      "src": "/api/opportunities",
+      "dest": "/api/opportunities.js"
+    },
+    {
+      "src": "/api/stats",
+      "dest": "/api/stats.js"
+    },
+    {
+      "src": "/api/simulate",
+      "dest": "/api/simulate.js"
+    },
+    {
+      "src": "/api/prices",
+      "dest": "/api/prices.js"
+    },
+    {
+      "src": "/dashboard",
+      "dest": "/public/index.html"
+    },
+    {
+      "src": "/",
+      "dest": "/public/index.html"
+    },
+    {
+      "src": "/api/(.*)",
+      "dest": "/api/index.js"
+    }
+  ],
   "functions": {
-    "api/index.js": {
-      "maxDuration": 60
+    "api/*.js": {
+      "maxDuration": 300
     }
   },
-  "rewrites": [
-    {
-      "source": "/(.*)",
-      "destination": "/api/index.js"
-    }
-  ]
+  "env": {
+    "NODE_ENV": "production"
+  },
+  "regions": ["iad1"]
 }

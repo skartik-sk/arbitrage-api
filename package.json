@@ -8,6 +8,7 @@
     "build": "echo 'No build step required for serverless API'",
     "start": "node api/index.js",
     "dev": "NODE_ENV=development node src/index.js",
+    "vercel-build": "echo 'Build complete'",
     "api": "node src/api/server.js",
     "bot": "node src/index.js",
     "setup": "npm install && cp .env.example .env && echo 'Setup complete! Please edit .env with your configuration.'",
